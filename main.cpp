@@ -1,9 +1,17 @@
-#include <cmath>
 #include <iostream>
 #include <omp.h>
 
 #include "types.h"
 #include "functions/arcsin.h"
+#include "functions/heaviside_step.h"
+#include "functions/exp.h"
+
+/**
+ * Compound function with heavy calculations
+ */
+data_t func_big(data_t x) {
+    return exp(x) + heaviside_step(x) + arcsin(x);
+}
 
 bool invalidate = false;
 
@@ -90,6 +98,8 @@ void benchmark(const size_t n, const data_t a, const data_t b, const func_type f
         // Invalidate coefficient table
         invalidate = true;
         arcsin(0);
+        exp(0);
+        heaviside_step(0);
         invalidate = false;
 
         Result res = run(n, a, b, func);
@@ -106,11 +116,17 @@ void actual(const size_t n, const data_t a, const data_t b, const func_type func
     std::cout << "Result: " << res.get_result() << std::endl;
 }
 
-int main() {
-    const size_t n = 100000;
-    const data_t a = 0;
+int main(int argc, char *argv[]) {
+    size_t n = 1000000;
+    if (argc == 2) {
+        char *end;
+        size_t cnt = strtoull(argv[1], &end, 10);
+        if (end != argv[1])
+            n = cnt;
+    }
+    const data_t a = -1.0;
     const data_t b = 1.0;
-    const func_type func = arcsin;
+    const func_type func = func_big;
 
 #ifdef BENCHMARK
     benchmark(n, a, b, func);
