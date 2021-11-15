@@ -83,14 +83,14 @@ Result run(const size_t n, const data_t a, const data_t b, const func_type func)
 void benchmark(const size_t n, const data_t a, const data_t b, const func_type func) {
 
 #ifndef WARMUP_ROUNDS_CNT
-#define WARMUP_ROUNDS_CNT 10
+#define WARMUP_ROUNDS_CNT 3
 #endif
     // Warmup round
     for (size_t i = 0; i < WARMUP_ROUNDS_CNT; i++)
         run(n, a, b, func);
 
 #ifndef ROUNDS_CNT
-#define ROUNDS_CNT 10
+#define ROUNDS_CNT 5
 #endif
     // Actual round
     double avg = 0.0;
