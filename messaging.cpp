@@ -25,9 +25,6 @@ void master_send_job(const Partition &p, int dest) {
     MPI_Pack(&n, 1, MPI_UNSIGNED_LONG_LONG, buff, 128, &pos, MPI_COMM_WORLD);
 
     MPI_Send(buff, pos, MPI_PACKED, dest, 0, MPI_COMM_WORLD);
-
-    printf("Sent\n");
-    fflush(stdout);
 }
 
 void master_send_terminate(int dest) {
@@ -44,9 +41,6 @@ Partition slave_receive_job() {
     MPI_Status status;
     uint8_t buff[128];
     MPI_Recv(buff, 128, MPI_PACKED, 0, 0, MPI_COMM_WORLD, &status);
-
-    printf("Recieved\n");
-    fflush(stdout);
 
     int pos = 0;
     int m;

@@ -127,9 +127,6 @@ void actual(const size_t n, const data_t a, const data_t b, const func_type func
 }
 
 void run_slave() {
-    printf("Slave entered\n");
-    fflush(stdout);
-
     while (true) {
         try {
             const Partition p = slave_receive_job();
@@ -143,11 +140,7 @@ void run_slave() {
 }
 
 void run_master(int argc, char *argv[]) {
-
-    printf("Master entered\n");
-    fflush(stdout);
-
-    size_t n = 1000000;
+    size_t n = 100000;
     if (argc == 2) {
         char *end;
         size_t cnt = strtoull(argv[1], &end, 10);
