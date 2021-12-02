@@ -46,12 +46,9 @@ data_t run(const Partition x_, const func_type func) {
     data_t result = 0.0;
 
     size_t n = x_.get_n();
-    for (size_t i = 1; i < n - 1; i++) {
+    for (size_t i = 0; i < n; i++) {
         result += func(x_(i));
     }
-
-    result += (func(x_(n)) + func(x_(0))) / 2;
-    result *= x_.get_delta();
 
     return result;
 }
@@ -83,6 +80,9 @@ Result run_full(const size_t n, const data_t a, const data_t b, const func_type 
     Partition p{full(0), full(partition_step + (n % num_process > 0)), partition_step + (n % num_process > 0)};
     data_t r = run(p, func);
     r = reduce(r);
+
+    r += (func(full(n)) - func(full(0))) / 2;
+    r *= full.get_delta();
 
     res.set_result(r);
     res.timer_end();
@@ -136,6 +136,13 @@ void run_slave() {
         } catch (std::exception &e) {
             return;
         }
+
+        // Invalidate coefficient table
+        invalidate = true;
+        arcsin(0);
+        exp(0);
+        heaviside_step(0);
+        invalidate = false;
     }
 }
 
