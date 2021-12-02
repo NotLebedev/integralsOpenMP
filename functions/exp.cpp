@@ -7,7 +7,6 @@ extern bool invalidate;
  * Exponent function represented by taylor series
  *
  * Defines:
- * EXP_SERIES_PARALLEL -- define to enable parallel calculation of series
  * EXP_SERIES_SIZE -- defines number of terms to use in series expansion, default 100
  * EXP_PREPARE_COEFFICIENTS -- define to prepare array with precalculated coefficients
  **/
@@ -19,8 +18,6 @@ data_t exp(data_t x) {
 #ifdef EXP_PREPARE_COEFFICIENTS
     static data_t coeffs[EXP_SERIES_SIZE] = {0};
     static bool coeffs_ready = false;
-#pragma omp threadprivate(coeffs)
-#pragma omp threadprivate(coeffs_ready)
     if (invalidate)
         coeffs_ready = false;
     if (!coeffs_ready) {
@@ -32,9 +29,6 @@ data_t exp(data_t x) {
 #endif
 
     data_t result = 0.0;
-#ifdef EXP_SERIES_PARALLEL
-#pragma omp parallel for shared(x), reduction(+:result), default(none)
-#endif
     for (int n = 0; n < EXP_SERIES_SIZE; n++) {
 #ifdef EXP_PREPARE_COEFFICIENTS
         result += coeffs[n] * powl(x, n);

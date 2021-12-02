@@ -8,7 +8,6 @@ extern bool invalidate;
  * This representation calculates it using Fourier series
  *
  * Defines:
- * HS_SERIES_PARALLEL -- define to enable parallel calculation of series
  * HS_SERIES_SIZE -- defines number of terms to use in series expansion, default 100
  * HS_PREPARE_COEFFICIENTS -- define to prepare array with precalculated coefficients
  **/
@@ -20,8 +19,6 @@ data_t heaviside_step(data_t x) {
 #ifdef HS_PREPARE_COEFFICIENTS
     static data_t coeffs[HS_SERIES_SIZE] = {0};
     static bool coeffs_ready = false;
-#pragma omp threadprivate(coeffs)
-#pragma omp threadprivate(coeffs_ready)
     if (invalidate)
         coeffs_ready = false;
     if (!coeffs_ready) {
@@ -33,9 +30,6 @@ data_t heaviside_step(data_t x) {
 #endif
 
     data_t result = 0.5;
-#ifdef HS_SERIES_PARALLEL
-#pragma omp parallel for shared(x), reduction(+:result), default(none)
-#endif
     for (int i = 0; i < HS_SERIES_SIZE; i++) {
         int n = 2 * i + 1;
 #ifdef HS_PREPARE_COEFFICIENTS

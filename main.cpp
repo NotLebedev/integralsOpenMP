@@ -1,10 +1,11 @@
 #include <iostream>
-#include <omp.h>
+#include <mpi.h>
 
 #include "types.h"
 #include "functions/arcsin.h"
 #include "functions/heaviside_step.h"
 #include "functions/exp.h"
+#include "messaging.h"
 
 /**
  * Compound function with heavy calculations
@@ -15,33 +16,14 @@ data_t func_big(data_t x) {
 
 bool invalidate = false;
 
-class Partition {
-public:
-    Partition(data_t a, data_t b, size_t n_steps) : a_{a}, b_{b}, n_steps_{n_steps},
-                                                    delta_{(b - a) / (data_t)n_steps} {}
-    data_t operator() (size_t i) const {
-        return a_ + ((double) i) * delta_;
-    }
-
-    data_t get_delta() const {
-        return delta_;
-    }
-
-private:
-    data_t a_;
-    data_t b_;
-    size_t n_steps_;
-    data_t delta_;
-};
-
 class Result {
 public:
     void timer_start() {
-        time = omp_get_wtime();
+        time = MPI_Wtime();
     }
 
     void timer_end() {
-        time = omp_get_wtime() - time;
+        time = MPI_Wtime(); - time;
     }
 
     void set_result(data_t res) noexcept {
@@ -60,13 +42,10 @@ private:
     data_t result;
 };
 
-Result run(const size_t n, const data_t a, const data_t b, const func_type func) {
-    Result res{};
-    res.timer_start();
+data_t run(const Partition x_, const func_type func) {
     data_t result = 0.0;
 
-    const Partition x_(a, b, n);
-#pragma omp parallel for shared(func, n, x_), reduction(+:result), default(none)
+    size_t n = x_.get_n();
     for (size_t i = 1; i < n - 1; i++) {
         result += func(x_(i));
     }
@@ -74,8 +53,39 @@ Result run(const size_t n, const data_t a, const data_t b, const func_type func)
     result += (func(x_(n)) + func(x_(0))) / 2;
     result *= x_.get_delta();
 
+    return result;
+}
+
+Result run_full(const size_t n, const data_t a, const data_t b, const func_type func) {
+    Result res{};
+    res.timer_start();
+
+    Partition full{a, b, n};
+
+    int num_process;
+    MPI_Comm_size(MPI_COMM_WORLD, &num_process);
+
+    size_t partition_step = n / num_process;
+    for (size_t i = 0, j = 0; j < num_process; j++) {
+        if (j < n % num_process) {
+            Partition p{full(i), full(i + partition_step + 1), partition_step + 1};
+            //printf("Partition %lu %lu %lu\n", i, i + partition_step + 1, partition_step + 1);
+            i += partition_step + 1;
+            master_send_job(p, (int) j);
+        } else if (partition_step != 0) {
+            Partition p{full(i), full(i + partition_step), partition_step};
+            //printf("Partition %lu %lu %lu\n", i, i + partition_step, partition_step);
+            i += partition_step;
+            master_send_job(p, (int) j);
+        }
+    }
+
+    Partition p{full(0), full(partition_step + (n % num_process > 0)), partition_step + (n % num_process > 0)};
+    data_t r = run(p, func);
+    r = reduce(r);
+
+    res.set_result(r);
     res.timer_end();
-    res.set_result(result);
 
     return res;
 }
@@ -87,7 +97,7 @@ void benchmark(const size_t n, const data_t a, const data_t b, const func_type f
 #endif
     // Warmup round
     for (size_t i = 0; i < WARMUP_ROUNDS_CNT; i++)
-        run(n, a, b, func);
+        run_full(n, a, b, func);
 
 #ifndef ROUNDS_CNT
 #define ROUNDS_CNT 5
@@ -102,7 +112,7 @@ void benchmark(const size_t n, const data_t a, const data_t b, const func_type f
         heaviside_step(0);
         invalidate = false;
 
-        Result res = run(n, a, b, func);
+        Result res = run_full(n, a, b, func);
         avg  = (avg * i + res.get_runtime()) / (i + 1);
     }
 
@@ -110,13 +120,33 @@ void benchmark(const size_t n, const data_t a, const data_t b, const func_type f
 }
 
 void actual(const size_t n, const data_t a, const data_t b, const func_type func) {
-    Result res = run(n, a, b, func);
+    Result res = run_full(n, a, b, func);
 
     std::cout << "Runtime: " << res.get_runtime() << " seconds. ";
     std::cout << "Result: " << res.get_result() << std::endl;
 }
 
-int main(int argc, char *argv[]) {
+void run_slave() {
+    printf("Slave entered\n");
+    fflush(stdout);
+
+    while (true) {
+        try {
+            const Partition p = slave_receive_job();
+            const func_type func = func_big;
+            data_t res = run(p, func);
+            reduce(res);
+        } catch (std::exception &e) {
+            return;
+        }
+    }
+}
+
+void run_master(int argc, char *argv[]) {
+
+    printf("Master entered\n");
+    fflush(stdout);
+
     size_t n = 1000000;
     if (argc == 2) {
         char *end;
@@ -133,5 +163,22 @@ int main(int argc, char *argv[]) {
 #else
     actual(n, a, b, func);
 #endif
+    int num_process;
+    MPI_Comm_size(MPI_COMM_WORLD, &num_process);
+    for (int i = 1; i < num_process; ++i) {
+        master_send_terminate(i);
+    }
+}
 
+int main(int argc, char *argv[]) {
+    MPI_Init(&argc,&argv);
+    int mpi_proc_id;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_proc_id);
+    if (mpi_proc_id != 0)
+        run_slave();
+    else
+        run_master(argc, argv);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Finalize();
 }
