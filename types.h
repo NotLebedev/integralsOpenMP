@@ -11,6 +11,9 @@ class Partition {
 public:
     Partition(data_t a, data_t b, size_t n_steps) : a_{a}, b_{b}, n_steps_{n_steps},
                                                     delta_{(b - a) / (data_t)n_steps} {}
+
+    Partition(const Partition &copy) = default;
+
     data_t operator() (size_t i) const {
         return a_ + ((double) i) * delta_;
     }
@@ -23,7 +26,7 @@ public:
         return n_steps_;
     }
 
-    size_t get_a() const {
+    data_t get_a() const {
         return a_;
     }
 
