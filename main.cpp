@@ -1,5 +1,6 @@
 #include <iostream>
 #include <mpi.h>
+#include <cstdlib>
 
 #include "types.h"
 #include "functions/arcsin.h"
@@ -23,18 +24,18 @@ public:
     }
 
     void timer_end() {
-        time = MPI_Wtime(); - time;
+        time = MPI_Wtime() - time;
     }
 
-    void set_result(data_t res) noexcept {
+    void set_result(data_t res) {
         result = res;
     }
 
-    data_t get_result() const noexcept {
+    data_t get_result() const {
         return result;
     }
 
-    double get_runtime() const noexcept {
+    double get_runtime() const {
         return time;
     }
 private:
@@ -42,22 +43,22 @@ private:
     data_t result;
 };
 
-data_t run(const Partition x_, const func_type func) {
+data_t run(Partition *x_, const func_type func) {
     data_t result = 0.0;
 
-    size_t n = x_.get_n();
+    size_t n = x_->get_n();
     for (size_t i = 0; i < n; i++) {
-        result += func(x_(i));
+        result += func(x_->get(i));
     }
 
     return result;
 }
 
-Result run_full(const size_t n, const data_t a, const data_t b, const func_type func) {
-    Result res{};
-    res.timer_start();
+Result *run_full(const size_t n, const data_t a, const data_t b, const func_type func) {
+    Result *res = new Result();
+    res->timer_start();
 
-    Partition full{a, b, n};
+    Partition *full = new Partition(a, b, n);
 
     int num_process;
     MPI_Comm_size(MPI_COMM_WORLD, &num_process);
@@ -65,27 +66,33 @@ Result run_full(const size_t n, const data_t a, const data_t b, const func_type 
     size_t partition_step = n / num_process;
     for (size_t i = 0, j = 0; j < num_process; j++) {
         if (j < n % num_process) {
-            Partition p{full(i), full(i + partition_step + 1), partition_step + 1};
+            Partition *p = new Partition(full->get(i), full->get(i + partition_step + 1), partition_step + 1);
             //printf("Partition %lu %lu %lu\n", i, i + partition_step + 1, partition_step + 1);
             i += partition_step + 1;
             master_send_job(p, (int) j);
+
+            delete p;
         } else if (partition_step != 0) {
-            Partition p{full(i), full(i + partition_step), partition_step};
+            Partition *p = new Partition(full->get(i), full->get(i + partition_step), partition_step);
             //printf("Partition %lu %lu %lu\n", i, i + partition_step, partition_step);
             i += partition_step;
             master_send_job(p, (int) j);
+
+            delete p;
         }
     }
 
-    Partition p{full(0), full(partition_step + (n % num_process > 0)), partition_step + (n % num_process > 0)};
+    Partition *p = new Partition(full->get(0), full->get(partition_step + (n % num_process > 0)),
+                                 partition_step + (n % num_process > 0));
     data_t r = run(p, func);
     r = reduce(r);
+    delete p;
 
-    r += (func(full(n)) - func(full(0))) / 2;
-    r *= full.get_delta();
+    r += (func(full->get(n)) - func(full->get(0))) / 2;
+    r *= full->get_delta();
 
-    res.set_result(r);
-    res.timer_end();
+    res->set_result(r);
+    res->timer_end();
 
     return res;
 }
@@ -112,30 +119,32 @@ void benchmark(const size_t n, const data_t a, const data_t b, const func_type f
         heaviside_step(0);
         invalidate = false;
 
-        Result res = run_full(n, a, b, func);
-        avg  = (avg * i + res.get_runtime()) / (i + 1);
+        Result *res = run_full(n, a, b, func);
+        avg  = (avg * i + res->get_runtime()) / (i + 1);
+        delete res;
     }
 
     std::cout << "Average runtime: " << avg << " seconds" << std::endl;
 }
 
 void actual(const size_t n, const data_t a, const data_t b, const func_type func) {
-    Result res = run_full(n, a, b, func);
+    Result *res = run_full(n, a, b, func);
 
-    std::cout << "Runtime: " << res.get_runtime() << " seconds. ";
-    std::cout << "Result: " << res.get_result() << std::endl;
+    std::cout << "Runtime: " << res->get_runtime() << " seconds. ";
+    std::cout << "Result: " << res->get_result() << std::endl;
+
+    delete res;
 }
 
 void run_slave() {
     while (true) {
-        try {
-            const Partition p = slave_receive_job();
-            const func_type func = func_big;
-            data_t res = run(p, func);
-            reduce(res);
-        } catch (std::exception &e) {
+        Partition *p = slave_receive_job();
+        if (p == NULL)
             return;
-        }
+        const func_type func = func_big;
+        data_t res = run(p, func);
+        reduce(res);
+        delete p;
 
         // Invalidate coefficient table
         invalidate = true;

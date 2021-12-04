@@ -7,17 +7,17 @@
 #define MESSAGE_JOB 0
 #define MESSAGE_TERMINATE 1
 
-void master_send_job(const Partition &p, int dest) {
+void master_send_job(const Partition *p, int dest) {
     if (!dest)
         return;
 
-    uint8_t buff[128];
-    const data_t a = p.get_a();
-    const data_t b = p.get_b();
-    const auto n = (unsigned long long) p.get_n();
+    unsigned char buff[128];
+    data_t a = p->get_a();
+    data_t b = p->get_b();
+    unsigned long long n = (unsigned long long) p->get_n();
 
     int pos = 0;
-    const int m = MESSAGE_JOB;
+    int m = MESSAGE_JOB;
 
     MPI_Pack(&m, 1, MPI_INT,                buff, 128, &pos, MPI_COMM_WORLD);
     MPI_Pack(&a, 1, MPI_DATA_T,             buff, 128, &pos, MPI_COMM_WORLD);
@@ -28,18 +28,18 @@ void master_send_job(const Partition &p, int dest) {
 }
 
 void master_send_terminate(int dest) {
-    uint8_t buff[128];
+    unsigned char buff[128];
     int pos = 0;
-    const int m = MESSAGE_TERMINATE;
+    int m = MESSAGE_TERMINATE;
 
     MPI_Pack(&m, 1, MPI_INT, buff, 128, &pos, MPI_COMM_WORLD);
 
     MPI_Send(buff, pos, MPI_PACKED, dest, 0, MPI_COMM_WORLD);
 }
 
-Partition slave_receive_job() {
+Partition *slave_receive_job() {
     MPI_Status status;
-    uint8_t buff[128];
+    unsigned char buff[128];
     MPI_Recv(buff, 128, MPI_PACKED, 0, 0, MPI_COMM_WORLD, &status);
 
     int pos = 0;
@@ -47,7 +47,7 @@ Partition slave_receive_job() {
     MPI_Unpack(buff, 128, &pos, &m, 1, MPI_INT, MPI_COMM_WORLD);
 
     if (m == MESSAGE_TERMINATE)
-        throw std::exception{};
+        return NULL;
 
     data_t a;
     data_t b;
@@ -56,7 +56,7 @@ Partition slave_receive_job() {
     MPI_Unpack(buff, 128, &pos, &b, 1, MPI_DATA_T,             MPI_COMM_WORLD);
     MPI_Unpack(buff, 128, &pos, &n, 1, MPI_UNSIGNED_LONG_LONG, MPI_COMM_WORLD);
 
-    return Partition{a, b, n};
+    return new Partition(a, b, n);
 }
 
 data_t reduce(data_t local_sum) {
